@@ -84,11 +84,12 @@
     view.autoresizingMask = (UIViewAutoresizingFlexibleWidth |
                              UIViewAutoresizingFlexibleHeight);
 
-    webView = [[UIWebView alloc]
+    webView = [[WKWebView alloc]
                   initWithFrame: CGRectMake(0, 0,
                                             bounds.size.width,
                                             bounds.size.height - 44)];
-    webView.delegate = self;
+    webView.navigationDelegate = self;
+    webView.UIDelegate = self;
     webView.backgroundColor = [UIColor colorWithWhite: .125f
                                        alpha: 1];
     webView.autoresizingMask = (UIViewAutoresizingFlexibleWidth |
@@ -154,14 +155,16 @@
     assert(webView);
     if(webView.loading)
         webView.hidden = YES;
-    webView.delegate = self;
+    webView.navigationDelegate = self;
+    webView.UIDelegate = self;
     [super viewWillAppear: animated];
 }
 
 - (void) viewWillDisappear: (BOOL) animated
 {
     [webView stopLoading];
-    webView.delegate = nil;
+    webView.navigationDelegate = nil;
+    webView.UIDelegate = nil;
     [super viewWillDisappear: animated];
 }
 
@@ -210,37 +213,14 @@
         [self dismissModalViewControllerAnimated: YES];
 }
 
-- (void) webViewDidFinishLoad: (UIWebView*) view
-{
-    if(view.hidden) {
-        [view stringByEvaluatingJavaScriptFromString:
-            [NSString stringWithFormat:
-                @"onZBarHelp({reason:\"%@\"});", reason]];
-        [UIView beginAnimations: @"ZBarHelp"
-                context: nil];
-        view.hidden = NO;
-        [UIView commitAnimations];
+- (void)webView:(WKWebView *)webView decidePolicyForNavigationAction:(nonnull WKNavigationAction *)navigationAction decisionHandler:(nonnull void (^)(WKNavigationActionPolicy))decisionHandler {
+    NSLog(@"webview url: %@", navigationAction.request.URL);
+    
+    NSURL *url = navigationAction.request.URL;
+    if([url isFileURL]) {
+        decisionHandler(WKNavigationActionPolicyAllow);
+        return;
     }
-
-    BOOL canGoBack = [view canGoBack];
-    NSArray *items = toolbar.items;
-    if(canGoBack != ([items objectAtIndex: 0] == backBtn)) {
-        if(canGoBack)
-            items = [NSArray arrayWithObjects: backBtn, space, doneBtn, nil];
-        else
-            items = [NSArray arrayWithObjects: space, doneBtn, nil];
-        [toolbar setItems: items
-                 animated: YES];
-    }
-}
-
-- (BOOL)             webView: (UIWebView*) view
-  shouldStartLoadWithRequest: (NSURLRequest*) req
-              navigationType: (UIWebViewNavigationType) nav
-{
-    NSURL *url = [req URL];
-    if([url isFileURL])
-        return(YES);
 
     linkURL = [url retain];
     UIAlertView *alert =
@@ -253,7 +233,39 @@
     alert.delegate = self;
     [alert show];
     [alert release];
-    return(NO);
+    decisionHandler(WKNavigationActionPolicyCancel);
+}
+
+- (void)webView:(WKWebView *)webView didStartProvisionalNavigation:(WKNavigation *)navigation {
+    NSLog(@"webview start: %@", webView.URL);
+}
+
+- (void)webView:(WKWebView *)webView didCommitNavigation:(WKNavigation *)navigation {
+    NSLog(@"webview commit: %@", webView.URL);
+}
+
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
+    NSLog(@"webview finish: %@", webView.URL);
+    
+    if(webView.hidden) {
+        [webView evaluateJavaScript:[NSString stringWithFormat:@"onZBarHelp({reason:\"%@\"});", reason]
+                  completionHandler:nil];
+        [UIView beginAnimations: @"ZBarHelp"
+                context: nil];
+        webView.hidden = NO;
+        [UIView commitAnimations];
+    }
+
+    BOOL canGoBack = [webView canGoBack];
+    NSArray *items = toolbar.items;
+    if(canGoBack != ([items objectAtIndex: 0] == backBtn)) {
+        if(canGoBack)
+            items = [NSArray arrayWithObjects: backBtn, space, doneBtn, nil];
+        else
+            items = [NSArray arrayWithObjects: space, doneBtn, nil];
+        [toolbar setItems: items
+                 animated: YES];
+    }
 }
 
 - (void)     alertView: (UIAlertView*) view
